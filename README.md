@@ -1,36 +1,214 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# react-dnd & react-dnd-html5-backend
 
-## Getting Started
+How to create a drag and drop feature using this in react/nextjs
 
-First, run the development server:
+![preview](/preview/preview.png)
+
+step 1
+
+Let’s create a next.js project
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx create-next-app@latest ./
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+step 2
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Install the dependencies
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm i react-dnd react-dnd-html5-backend
+```
 
-## Learn More
+step 3
 
-To learn more about Next.js, take a look at the following resources:
+context for state management
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+```bash
+import React, { createContext, useContext, useState } from "react";
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+export interface ITEM {
+    id: string;
+    text: string;
+    status: string;
+}
 
-## Deploy on Vercel
+interface DragDropContextProps {
+    droppedItems: ITEM[];
+    handleDropItem: (item: ITEM) => void;
+}
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+const DragDropContext = createContext<DragDropContextProps | undefined>(
+    undefined
+);
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+export const DragDropProvider: React.FC<{ children: React.ReactNode }> = ({
+    children,
+}) => {
+    const initialData: ITEM[] = [
+        { id: "item1", text: "item1", status: "today" },
+        { id: "item2", text: "item2", status: "tomorrow" },
+        { id: "item3", text: "item3", status: "today" },
+    ];
+
+    const [droppedItems, setDroppedItems] = useState<ITEM[]>(initialData);
+
+    const handleDropItem = (droppedItem: ITEM) => {
+        setDroppedItems((prevItems) => {
+            const filteredItems = prevItems.filter(
+                (item) => item.id !== droppedItem.id
+            );
+            return [...filteredItems, droppedItem];
+        });
+    };
+
+    return (
+        <DragDropContext.Provider value={{ droppedItems, handleDropItem }}>
+            {children}
+        </DragDropContext.Provider>
+    );
+};
+
+export const useDragDrop = () => {
+    const context = useContext(DragDropContext);
+    if (!context) {
+        throw new Error("useDragDrop must be used within a DragDropProvider");
+    }
+    return context;
+};
+```
+
+step 4
+
+Create Draggable and Droppable Components
+
+1. **Create a new component `DraggableItem.tsx`**:
+This will be the item that users can drag around.
+
+```bash
+import { useDrag } from "react-dnd";
+
+export const ITEM_TYPE = "task";
+
+export interface ITEM {
+    id: string;
+    text: string;
+    status: string;
+}
+
+const DraggableItem: React.FC<ITEM> = ({ id, text, status }) => {
+    const [{ isDragging }, drag] = useDrag(() => ({
+        type: ITEM_TYPE,
+        item: { id, text, status },
+        collect: (monitor) => ({
+            isDragging: monitor.isDragging(),
+        }),
+    }));
+
+    return (
+        <div
+            ref={(instance) => {
+                drag(instance);
+            }}
+            className={`p-4 bg-blue-500 text-white rounded-lg cursor-pointer ${
+                isDragging ? "opacity-50" : "opacity-100"
+            }`}
+        >
+            {text}
+        </div>
+    );
+};
+
+export default DraggableItem;
+```
+
+b. **Create a new component `DroppableArea.tsx`**:
+This component will accept draggable items.
+
+```bash
+import { useDrop } from "react-dnd";
+import { useDragDrop, ITEM } from "../context/DragDropContext";
+import DraggableItem from "./DraggableItem";
+
+interface DroppableAreaProps {
+    status: string;
+    children: React.ReactNode;
+}
+
+const DroppableArea: React.FC<DroppableAreaProps> = ({ children, status }) => {
+    const { droppedItems, handleDropItem } = useDragDrop();
+
+    const [{ isOver }, drop] = useDrop(() => ({
+        accept: "task",
+        drop: (item: ITEM) => handleDropItem({ ...item, status }),
+        collect: (monitor) => ({
+            isOver: monitor.isOver(),
+        }),
+    }));
+
+    return (
+        <div
+            ref={(instance) => {
+                drop(instance);
+            }}
+            className={`w-full space-y-2 p-8 border-2 border-dashed rounded-lg ${
+                isOver ? "border-blue-500 bg-blue-100" : "border-gray-300"
+            }`}
+        >
+            {children}
+            {droppedItems
+                .filter((item) => item.status === status)
+                .map((item) => (
+                    <DraggableItem key={item.id} {...item} />
+                ))}
+        </div>
+    );
+};
+
+export default DroppableArea;
+```
+
+step 5
+
+Lastly The main container for drag and drop
+
+For that the main container must warpped with `DndProvider`
+
+page.tsx:
+
+```bash
+"use client";
+
+import { DndProvider } from "react-dnd";
+import { HTML5Backend } from "react-dnd-html5-backend";
+import DroppableArea from "./components/DroppableArea";
+import { DragDropProvider } from "./context/DragDropContext";
+
+const dropTypes = ["today", "tomorrow"];
+
+export default function Home() {
+    return (
+        <DragDropProvider>
+            <DndProvider backend={HTML5Backend}>
+                <main className='h-screen w-full flex items-center justify-center'>
+                    <div className='p-10 w-full h-full'>
+                        <h1 className='text-3xl mb-8 font-bold'>
+                            Drag and Drop Example:
+                        </h1>
+                        <div className='flex justify-between space-x-4 bg-gray-100 p-4 w-full h-full'>
+                            {dropTypes.map((area, i) => (
+                                <DroppableArea key={i} status={area}>
+                                    <h1>{area}</h1>
+                                    <h2 className='text-xl font-semibold mb-4'>
+                                        Drop Here
+                                    </h2>
+                                </DroppableArea>
+                            ))}
+                        </div>
+                    </div>
+                </main>
+            </DndProvider>
+        </DragDropProvider>
+    );
+}
+```
